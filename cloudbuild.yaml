@@ -2,6 +2,6 @@ steps:
   - name: "gcr.io/kaniko-project/executor:latest"
     dir: "http-server"
     args:
+      - --cache
+      - --context=/workspace/http-server
       - --destination=gcr.io/$PROJECT_ID/http-server:latest
-      - --cache=true
-      - --cache-ttl=96h
