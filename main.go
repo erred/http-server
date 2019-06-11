@@ -22,7 +22,8 @@ func main() {
 	p := os.Getenv("PORT")
 	if p == "" {
 		p = ":8080"
-	} else if p[0] != ':' {
+	}
+	if p[0] != ':' {
 		p = ":" + p
 	}
 
