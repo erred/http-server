@@ -1,5 +1,6 @@
 steps:
   - name: gcr.io/cloud-builders/docker:latest
+    dir: $_IMG
     args:
       - build
       - -t=gcr.io/$PROJECT_ID/$_IMG:$SHORT_SHA
