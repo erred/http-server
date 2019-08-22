@@ -1,3 +1,3 @@
-module seankhliao.com/cloud-build-tools/http-server
+module seankhliao.com/http-server
 
 go 1.12
