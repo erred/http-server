@@ -51,6 +51,9 @@ func main() {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		}
 	})
+	if os.Getenv("HTTPS") != "" {
+		go http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/"+os.Getenv("HTTPS")+"/fullchain.pem", "/etc/letsencrypt/live/"+os.Getenv("HTTPS")+"/privkey.pem", nil)
+	}
 
 	log.Fatal(http.ListenAndServe(p, nil))
 }
