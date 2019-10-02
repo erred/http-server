@@ -8,11 +8,12 @@ steps:
       - .
   - id: deploy
     name: gcr.io/cloud-builders/kubectl:latest
-    entrypoint: sh
     args:
-      - -c
-      - >-
-        [ $BRANCH_NAME = "master" ] && kubectl set image deploy $_IMG '*=gcr.io/$PROJECT_ID/$_IMG:$SHORT_SHA
+      - set
+      - image
+      - deploy
+      - $_IMG
+      - "*=gcr.io/$PROJECT_ID/$_IMG:$SHORT_SHA"
     env:
       - CLOUDSDK_COMPUTE_ZONE=$_ZONE
       - CLOUDSDK_CONTAINER_CLUSTER=$_CLUSTER
