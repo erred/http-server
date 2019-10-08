@@ -55,29 +55,25 @@ func main() {
 			f = fi.Name()
 		}
 
-		l := log.Info().Timestamp()
-		if f == "Not Found" {
-			l = log.Error().Timestamp()
-		}
 		remote := r.RemoteAddr
 		if fw := r.Header.Get("x-forwarded-for"); fw != "" {
 			remote = fw
 		}
-		l = l.Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent"))
+		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
 
 		if f == "Not Found" {
 			if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
 				p := strings.TrimSuffix(strings.TrimSuffix(r.URL.Path, ".html"), "index")
-				l.Msgf("redirect to %v", p)
+				sub.Error().Msgf("redirect to %v", p)
 				http.Redirect(w, r, p, http.StatusFound)
 				return
 			}
 			http.Error(w, "Not Found", http.StatusNotFound)
-			l.Msg("Not Found")
+			sub.Error().Msg(f)
 			return
 		}
 		http.ServeFile(w, r, f)
-		l.Msg(f)
+		sub.Info().Msg(f)
 	})
 
 	l := log.Info().Str("dir", dir)

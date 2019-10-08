@@ -26,3 +26,4 @@ substitutions:
   _IMG: http-server
 tags:
   - $SHORT_SHA
+  - $COMMIT_SHA
