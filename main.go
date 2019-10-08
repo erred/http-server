@@ -52,11 +52,11 @@ func main() {
 
 		f := "Not Found"
 		if fi, err := os.Stat(filepath.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
-			f = fi.Name()
+			f = filepath.Join(dir, fi.Name())
 		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path+".html")); err == nil && !fi.IsDir() {
-			f = fi.Name()
+			f = filepath.Join(dir, fi.Name())
 		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path, "index.html")); err == nil && !fi.IsDir() {
-			f = fi.Name()
+			f = filepath.Join(dir, r.URL.Path, "index.html")
 		}
 
 		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
