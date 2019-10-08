@@ -2,16 +2,36 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var port, httpsdomain, dir string
 
+func initLog() {
+	logfmt := os.Getenv("LOGFMT")
+	if logfmt != "json" {
+		logfmt = "text"
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout, NoColor: !terminal.IsTerminal(int(os.Stdout.Fd()))})
+	}
+
+	level, _ := zerolog.ParseLevel(os.Getenv("LOGLVL"))
+	if level == zerolog.NoLevel {
+		level = zerolog.InfoLevel
+	}
+	log.Info().Str("FMT", logfmt).Str("LVL", level.String()).Msg("log initialized")
+	zerolog.SetGlobalLevel(level)
+}
+
 func main() {
+	initLog()
+
 	p := os.Getenv("PORT")
 	if p == "" {
 		p = ":8080"
@@ -20,47 +40,50 @@ func main() {
 	flag.StringVar(&httpsdomain, "https", "", "letsencrypt domain to look for certs")
 	flag.StringVar(&dir, "dir", "dst", "directory to serve")
 	flag.Parse()
-
 	if p[0] != ':' {
 		p = ":" + p
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		opath := r.URL.Path
-		r.URL.Path = strings.TrimSuffix(r.URL.Path, ".html")
-		r.URL.Path = strings.TrimSuffix(r.URL.Path, "index")
-		if opath != r.URL.Path {
-			log.Printf("%s %s %s %s %s: ", r.RemoteAddr, r.Header.Get("user-agent"), r.Proto, r.Method, r.URL)
-			log.Printf("redirect %v to %v\n", opath, r.URL.Path)
-			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+
+		f := "Not Found"
+		if fi, err := os.Stat(filepath.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
+			f = fi.Name()
+		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path+".html")); err == nil && !fi.IsDir() {
+			f = fi.Name()
+		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path, "index.html")); err == nil && !fi.IsDir() {
+			f = fi.Name()
+		}
+
+		l := log.Info().Timestamp()
+		if f == "Not Found" {
+			l = log.Error().Timestamp()
+		}
+		l.Str("remote", r.RemoteAddr).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent"))
+
+		if f == "Not Found" {
+			if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
+				p := strings.TrimSuffix(strings.TrimSuffix(r.URL.Path, ".html"), "index")
+				l.Msgf("redirect to %v", p)
+				http.Redirect(w, r, p, http.StatusFound)
+				return
+			}
+			http.Error(w, "Not Found", http.StatusNotFound)
+			l.Msg("Not Found")
 			return
 		}
-
-		if fi, err := os.Stat(filepath.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
-			log.Printf("%s %s %s %s %s: %s\n", r.RemoteAddr, r.Header.Get("user-agent"), r.Proto, r.Method, r.URL, filepath.Join(dir, r.URL.Path))
-			http.ServeFile(w, r, filepath.Join(dir, r.URL.Path))
-		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path+".html")); err == nil && !fi.IsDir() {
-			log.Printf("%s %s %s %s %s: %s\n", r.RemoteAddr, r.Header.Get("user-agent"), r.Proto, r.Method, r.URL, filepath.Join(dir, r.URL.Path+".html"))
-			http.ServeFile(w, r, filepath.Join(dir, r.URL.Path+".html"))
-		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path, "index.html")); err == nil && !fi.IsDir() {
-			log.Printf("%s %s %s %s %s: %s\n", r.RemoteAddr, r.Header.Get("user-agent"), r.Proto, r.Method, r.URL, filepath.Join(dir, r.URL.Path, "index.html"))
-			http.ServeFile(w, r, filepath.Join(dir, r.URL.Path, "index.html"))
-		} else {
-			log.Printf("%s %s %s %s %s\n", r.RemoteAddr, r.Header.Get("user-agent"), r.Proto, r.Method, r.URL)
-			http.Error(w, "Not Found", http.StatusNotFound)
-		}
+		http.ServeFile(w, r, f)
+		l.Msg(f)
 	})
 
-	log.Println("serving", dir)
+	l := log.Info().Str("dir", dir)
 	if httpsdomain != "" {
-		go func() {
-			log.Println("starting https server on :443")
-			pub := "/etc/letsencrypt/live/" + httpsdomain + "/fullchain.pem"
-			priv := "/etc/letsencrypt/live/" + httpsdomain + "/privkey.pem"
-			log.Fatal(http.ListenAndServeTLS(":443", pub, priv, nil))
-		}()
+		l = l.Str("https", ":443")
+		pub := "/etc/letsencrypt/live/" + httpsdomain + "/fullchain.pem"
+		priv := "/etc/letsencrypt/live/" + httpsdomain + "/privkey.pem"
+		go http.ListenAndServeTLS(":443", pub, priv, nil)
 	}
 
-	log.Println("starting http server on " + port)
-	log.Fatal(http.ListenAndServe(port, nil))
+	l.Str("http", port).Msg("serving")
+	http.ListenAndServe(port, nil)
 }
