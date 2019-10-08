@@ -63,7 +63,7 @@ func main() {
 		if fw := r.Header.Get("x-forwarded-for"); fw != "" {
 			remote = fw
 		}
-		l.Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent"))
+		l = l.Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent"))
 
 		if f == "Not Found" {
 			if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
