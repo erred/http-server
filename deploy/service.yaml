@@ -5,6 +5,7 @@ metadata:
 spec:
   entryPoints:
     - websecure
+    - web
   tls:
     certResolver: default
   routes:

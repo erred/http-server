@@ -13,8 +13,13 @@ spec:
       app: http-server
   template:
     spec:
-      nodeSelector:
-        cloud.google.com/gke-preemptible: "true"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: cloud.google.com/gke-preemptible
+                    operator: Exists
       containers:
         - name: http-server
           image: gcr.io/com-seankhliao/http-server:latest
