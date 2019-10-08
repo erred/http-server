@@ -45,6 +45,10 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		remote := r.RemoteAddr
+		if fw := r.Header.Get("x-forwarded-for"); fw != "" {
+			remote = fw
+		}
 
 		f := "Not Found"
 		if fi, err := os.Stat(filepath.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
@@ -55,25 +59,19 @@ func main() {
 			f = fi.Name()
 		}
 
-		remote := r.RemoteAddr
-		if fw := r.Header.Get("x-forwarded-for"); fw != "" {
-			remote = fw
-		}
 		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
 
-		if f == "Not Found" {
-			if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
-				p := strings.TrimSuffix(strings.TrimSuffix(r.URL.Path, ".html"), "index")
-				sub.Error().Msgf("redirect to %v", p)
-				http.Redirect(w, r, p, http.StatusFound)
-				return
-			}
-			http.Error(w, "Not Found", http.StatusNotFound)
+		if f != "Not Found" {
+			http.ServeFile(w, r, f)
+			sub.Info().Msg(f)
+		} else if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
+			p := strings.TrimSuffix(strings.TrimSuffix(r.URL.Path, ".html"), "index")
+			http.Redirect(w, r, p, http.StatusFound)
+			sub.Error().Msgf("redirect to %v", p)
+		} else {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			sub.Error().Msg(f)
-			return
 		}
-		http.ServeFile(w, r, f)
-		sub.Info().Msg(f)
 	})
 
 	l := log.Info().Str("dir", dir)
