@@ -6,8 +6,8 @@ spec:
   entryPoints:
     - websecure
     - web
-  tls:
-     certResolver: default
+  # tls:
+  #    certResolver: default
   routes:
     - kind: Rule
       match: Host(`api.seankhliao.com`) && PathPrefix(`/`)
