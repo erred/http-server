@@ -60,8 +60,10 @@ func main() {
 		}
 
 		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
-
-		if f != "Not Found" {
+		if rel, err := filepath.Rel(dir, f); err != nil || strings.HasPrefix(rel, "..") {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			sub.Error().Msg(f)
+		} else if f != "Not Found" {
 			http.ServeFile(w, r, f)
 			sub.Info().Msg(f)
 		} else if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
