@@ -1,4 +1,4 @@
-module seankhliao.com/http-server
+module github.com/seankhliao/http-server
 
 go 1.12
 
