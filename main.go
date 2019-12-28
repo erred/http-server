@@ -4,7 +4,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -36,13 +36,10 @@ func main() {
 	if p == "" {
 		p = ":8080"
 	}
-	flag.StringVar(&port, "port", p, "port to serve http on")
-	flag.StringVar(&httpsdomain, "https", "", "letsencrypt domain to look for certs")
+	flag.StringVar(&port, "port", p, "port to serve http on (:port)")
+	flag.StringVar(&httpsdomain, "https", "", "letsencrypt domain to look for certs (/etc/letsencrypt/live/...)")
 	flag.StringVar(&dir, "dir", "dst", "directory to serve")
 	flag.Parse()
-	if p[0] != ':' {
-		p = ":" + p
-	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		remote := r.RemoteAddr
@@ -50,20 +47,23 @@ func main() {
 			remote = fw
 		}
 
-		f := "Not Found"
-		if fi, err := os.Stat(filepath.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
-			f = filepath.Join(dir, fi.Name())
-		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path+".html")); err == nil && !fi.IsDir() {
-			f = filepath.Join(dir, fi.Name())
-		} else if fi, err := os.Stat(filepath.Join(dir, r.URL.Path, "index.html")); err == nil && !fi.IsDir() {
-			f = filepath.Join(dir, r.URL.Path, "index.html")
+		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
+		rpath := path.Clean(r.URL.Path)
+		if strings.HasPrefix(rpath, "../") {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			sub.Error().Msg(http.StatusText(http.StatusUnauthorized))
 		}
 
-		sub := log.With().Str("remote", remote).Str("proto", r.Proto).Str("method", r.Method).Str("url", r.URL.String()).Str("agent", r.Header.Get("user-agent")).Logger()
-		if rel, err := filepath.Rel(dir, f); err != nil || strings.HasPrefix(rel, "..") {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-			sub.Error().Msg(f)
-		} else if f != "Not Found" {
+		f := "Not Found"
+		if fi, err := os.Stat(path.Join(dir, r.URL.Path)); err == nil && !fi.IsDir() {
+			f = path.Join(dir, fi.Name())
+		} else if fi, err := os.Stat(path.Join(dir, r.URL.Path+".html")); err == nil && !fi.IsDir() {
+			f = path.Join(dir, fi.Name())
+		} else if fi, err := os.Stat(path.Join(dir, r.URL.Path, "index.html")); err == nil && !fi.IsDir() {
+			f = path.Join(dir, r.URL.Path, "index.html")
+		}
+
+		if f != "Not Found" {
 			http.ServeFile(w, r, f)
 			sub.Info().Msg(f)
 		} else if strings.HasSuffix(r.URL.Path, ".html") || strings.HasSuffix(r.URL.Path, "index") {
