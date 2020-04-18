@@ -7,16 +7,13 @@ A repo for http-server
 ![Version](https://img.shields.io/github/v/tag/seankhliao/com-seankhliao?sort=semver&style=flat-square)
 [![Build](https://badger.seankhliao.com/i/github_seankhliao_http-server)](https://badger.seankhliao.com/l/github_seankhliao_http-server)
 
-basic http server,
-with clean urls and trim trailing slash
+## Usage
 
-## usage
-
-```
-http-server dir_to_serve
+```sh
+GO111MODULE=on go get -u go.seankhliao.com/staticserver
 ```
 
-defaults:
+## About
 
-- `PORT`: 8080
-- dir_to_serve: `dst`
+- enforce trailing slash
+- no `[[index].html]`
