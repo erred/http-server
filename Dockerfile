@@ -1,13 +1,12 @@
 FROM golang:alpine AS build
 
-ENV CGO_ENABLED=0
 WORKDIR /app
+ENV CGO_ENABLED=0
 COPY . .
-RUN go build -mod=vendor -o /bin/app
+RUN go build -o /bin/http-server
 
 FROM scratch
 
-COPY --from=build /bin/app .
+COPY --from=build /bin/http-server /bin/
 
-ENTRYPOINT ["/app"]
-CMD ["/workspace"]
+ENTRYPOINT ["/bin/http-server"]
