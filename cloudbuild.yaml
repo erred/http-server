@@ -20,8 +20,8 @@ steps:
     args:
       - -c=.
       - -f=Dockerfile
-      - -d=us.gcr.io/$PROJECT_ID/$_IMG:latest
-      - -d=us.gcr.io/$PROJECT_ID/$_IMG:$TAG_NAME
+      # - -d=us.gcr.io/$PROJECT_ID/$_IMG:latest
+      # - -d=us.gcr.io/$PROJECT_ID/$_IMG:$TAG_NAME
       - -d=index.docker.io/seankhliao/$_IMG:latest
       - -d=index.docker.io/seankhliao/$_IMG:$TAG_NAME
       - --reproducible
