@@ -1,49 +1,24 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"path"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
-)
-
-var (
-	port = func() string {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = ":8080"
-		} else if port[0] != ':' {
-			port = ":" + port
-		}
-		return port
-	}()
+	"go.seankhliao.com/usvc"
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		<-sigs
-		cancel()
-	}()
-
-	// server
 	s := NewServer(os.Args)
-	s.Run(ctx)
+	s.svc.Log.Error().Err(usvc.Run(usvc.SignalContext(), s.svc)).Msg("exited")
 }
 
 type Server struct {
@@ -57,12 +32,11 @@ type Server struct {
 	lat  prometheus.Histogram
 
 	// server
-	log zerolog.Logger
-	mux *http.ServeMux
-	srv *http.Server
+	svc *usvc.ServerSimple
 }
 
 func NewServer(args []string) *Server {
+	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
 	s := &Server{
 		notfound: http.NotFoundHandler(),
 		page: promauto.NewCounterVec(prometheus.CounterOpts{
@@ -81,24 +55,12 @@ func NewServer(args []string) *Server {
 			Name: "staticserve_response_latency_s",
 			Help: "response times in s",
 		}),
-		log: zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, NoColor: true, TimeFormat: time.RFC3339}).With().Timestamp().Logger(),
-		mux: http.NewServeMux(),
-		srv: &http.Server{
-			ReadHeaderTimeout: 5 * time.Second,
-			WriteTimeout:      5 * time.Second,
-			IdleTimeout:       60 * time.Second,
-		},
+		svc: usvc.NewServerSimple(usvc.NewConfig(fs)),
 	}
 
-	s.mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	s.mux.Handle("/metrics", promhttp.Handler())
-	s.mux.Handle("/", s)
+	s.svc.Mux.Handle("/metrics", promhttp.Handler())
+	s.svc.Mux.Handle("/", s)
 
-	s.srv.Handler = s.mux
-	s.srv.ErrorLog = log.New(s.log, "", 0)
-
-	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
-	fs.StringVar(&s.srv.Addr, "addr", port, "host:port to serve on")
 	fs.StringVar(&s.dir, "dir", "public", "template to use, takes a singe {{.Repo}}")
 	fs.Parse(args[1:])
 
@@ -110,7 +72,7 @@ func NewServer(args []string) *Server {
 		})
 	}
 
-	s.log.Info().Str("addr", s.srv.Addr).Str("dir", s.dir).Msg("configured")
+	s.svc.Log.Info().Str("dir", s.dir).Msg("configured")
 	return s
 }
 
@@ -140,21 +102,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, f)
-}
-
-func (s *Server) Run(ctx context.Context) {
-	errc := make(chan error)
-	go func() {
-		errc <- s.srv.ListenAndServe()
-	}()
-
-	var err error
-	select {
-	case err = <-errc:
-	case <-ctx.Done():
-		err = s.srv.Shutdown(ctx)
-	}
-	s.log.Error().Err(err).Msg("server exit")
 }
 
 func exists(p string) bool {
