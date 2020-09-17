@@ -25,6 +25,6 @@ steps:
       - -d=$_REG/$PROJECT_ID/$_IMG:$TAG_NAME
       - --reproducible
       - --single-snapshot
-    volumes:
-      - name: login
-        path: /kaniko/.docker
+    # volumes:
+    #   - name: login
+    #     path: /kaniko/.docker
