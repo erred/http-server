@@ -108,9 +108,14 @@ func main() {
 		}
 	}()
 
-	err = srv.ListenAndServe()
+	if len(srv.TLSConfig.Certificates) > 0 {
+		err = srv.ListenAndServeTLS("", "")
+	} else {
+		err = srv.ListenAndServe()
+	}
 	if err != nil {
-		s.log.Error().Err(err).Msg("serve")
+		s.log.Error().Err(err).Msg("exit")
+		os.Exit(1)
 	}
 }
 
@@ -176,7 +181,11 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(u, "/") && exists(path.Join(s.dir, u, "index.html")):
 		f = path.Join(s.dir, u, "index.html")
 	case strings.HasSuffix(u, "/"):
-		s.notfound.ServeHTTP(w, r)
+		if s.notfound != nil {
+			s.notfound.ServeHTTP(w, r)
+		} else {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		}
 		code = http.StatusNotFound
 		return
 	case !strings.HasSuffix(u, ".html") && exists(path.Join(s.dir, u)):
