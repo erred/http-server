@@ -1,68 +1,56 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"flag"
 	"io/ioutil"
 	"net/http"
+	"net/http/pprof"
 	"os"
+	"os/signal"
 	"path"
-	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.seankhliao.com/usvc"
+	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/metric"
+	"go.opentelemetry.io/otel/api/unit"
+	"go.opentelemetry.io/otel/exporters/metric/prometheus"
+	"go.opentelemetry.io/otel/label"
+
+	"github.com/rs/zerolog"
 )
 
 func main() {
-	s := NewServer(os.Args)
-	s.svc.Log.Error().Err(usvc.Run(usvc.SignalContext(), s.svc)).Msg("exited")
-}
+	var s Server
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	fs.StringVar(&s.addr, "addr", ":8080", "listen addr")
+	fs.StringVar(&s.tlsCert, "tls-cert", "", "tls cert file")
+	fs.StringVar(&s.tlsKey, "tls-key", "", "tls key file")
+	fs.StringVar(&s.dir, "dir", "public", "directory to serve")
+	fs.Parse(os.Args[1:])
 
-type Server struct {
-	// config
-	dir      string
-	notfound http.Handler
+	promExporter, _ := prometheus.InstallNewPipeline(prometheus.Config{
+		DefaultHistogramBoundaries: []float64{1, 5, 10, 50, 100},
+	})
+	s.meter = global.Meter(os.Args[0])
+	s.page = metric.Must(s.meter).NewInt64Counter(
+		"page_hit",
+		metric.WithDescription("hits per page"),
+	)
+	s.code = metric.Must(s.meter).NewInt64Counter(
+		"response_code",
+		metric.WithDescription("http response codes"),
+	)
+	s.latency = metric.Must(s.meter).NewInt64ValueRecorder(
+		"serve_latency",
+		metric.WithDescription("http response latency"),
+		metric.WithUnit(unit.Milliseconds),
+	)
 
-	// metrics
-	page *prometheus.CounterVec
-	code *prometheus.CounterVec
-	lat  prometheus.Histogram
-
-	// server
-	svc *usvc.ServerSimple
-}
-
-func NewServer(args []string) *Server {
-	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
-	s := &Server{
-		notfound: http.NotFoundHandler(),
-		page: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "staticserve_page_requests",
-			Help: "requests by page",
-		},
-			[]string{"module"},
-		),
-		code: promauto.NewCounterVec(prometheus.CounterOpts{
-			Name: "staticserve_response_codes",
-			Help: "reponse by code",
-		},
-			[]string{"code"},
-		),
-		lat: promauto.NewHistogram(prometheus.HistogramOpts{
-			Name: "staticserve_response_latency_s",
-			Help: "response times in s",
-		}),
-		svc: usvc.NewServerSimple(usvc.NewConfig(fs)),
-	}
-
-	s.svc.Mux.Handle("/metrics", promhttp.Handler())
-	s.svc.Mux.Handle("/", s)
-
-	fs.StringVar(&s.dir, "dir", "public", "template to use, takes a singe {{.Repo}}")
-	fs.Parse(args[1:])
+	s.log = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 	notfound, err := ioutil.ReadFile(path.Join(s.dir, "404.html"))
 	if err == nil {
@@ -72,16 +60,110 @@ func NewServer(args []string) *Server {
 		})
 	}
 
-	s.svc.Log.Info().Str("dir", s.dir).Msg("configured")
-	return s
+	m := http.NewServeMux()
+	m.Handle("/", s)
+	m.Handle("/metrics", promExporter)
+	m.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	m.HandleFunc("/debug/pprof/", pprof.Index)
+	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	m.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	m.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	srv := &http.Server{
+		Addr:              s.addr,
+		Handler:           cors(m),
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+		TLSConfig: &tls.Config{
+			MinVersion:               tls.VersionTLS13,
+			PreferServerCipherSuites: true,
+		},
+	}
+
+	if s.tlsKey != "" && s.tlsCert != "" {
+		cert, err := tls.LoadX509KeyPair(s.tlsCert, s.tlsKey)
+		if err != nil {
+			s.log.Error().Err(err).Msg("laod tls keys")
+			return
+		}
+		srv.TLSConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+		<-c
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		go func() {
+			<-c
+			cancel()
+		}()
+		err := srv.Shutdown(ctx)
+		if err != nil {
+			s.log.Error().Err(err).Msg("unclean shutdown")
+		}
+	}()
+
+	err = srv.ListenAndServe()
+	if err != nil {
+		s.log.Error().Err(err).Msg("serve")
+	}
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func cors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodOptions:
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		case http.MethodGet, http.MethodPost:
+			h.ServeHTTP(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+	})
+}
+
+type Server struct {
+	dir      string
+	notfound http.Handler
+
+	meter   metric.Meter
+	page    metric.Int64Counter
+	code    metric.Int64Counter
+	latency metric.Int64ValueRecorder
+
+	log zerolog.Logger
+
+	addr    string
+	tlsCert string
+	tlsKey  string
+}
+
+func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t, code := time.Now(), http.StatusOK
-	s.page.WithLabelValues(r.URL.Path).Inc()
+	s.page.Add(r.Context(), 1, label.String("page", r.URL.Path))
+
+	// get data
+	remote := r.Header.Get("x-forwarded-for")
+	if remote == "" {
+		remote = r.RemoteAddr
+	}
+	ua := r.Header.Get("user-agent")
+
 	defer func() {
-		s.lat.Observe(time.Since(t).Seconds())
-		s.code.WithLabelValues(strconv.Itoa(code)).Inc()
+		s.latency.Record(r.Context(), time.Since(t).Milliseconds())
+		s.code.Add(r.Context(), 1, label.Int("code", code))
+
+		s.log.Debug().Str("path", r.URL.Path).Str("src", remote).Int("code", code).Str("user-agent", ua).Msg("served")
 	}()
 
 	u, f := r.URL.Path, ""

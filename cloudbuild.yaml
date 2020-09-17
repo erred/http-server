@@ -21,10 +21,10 @@ steps:
     args:
       - -c=.
       - -f=Dockerfile
-      # - -d=$_REG/$PROJECT_ID/$_IMG:latest
-      # - -d=$_REG/$PROJECT_ID/$_IMG:$TAG_NAME
-      - -d=index.docker.io/seankhliao/$_IMG:latest
-      - -d=index.docker.io/seankhliao/$_IMG:$TAG_NAME
+      - -d=$_REG/$PROJECT_ID/$_IMG:latest
+      - -d=$_REG/$PROJECT_ID/$_IMG:$TAG_NAME
+      # - -d=index.docker.io/seankhliao/$_IMG:latest
+      # - -d=index.docker.io/seankhliao/$_IMG:$TAG_NAME
       - --reproducible
       - --single-snapshot
     volumes:
