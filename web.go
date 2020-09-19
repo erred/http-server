@@ -19,18 +19,28 @@ import (
 	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 )
 
+// HTTPServerConf holds configs for creating a http.Server
 type HTTPServerConf struct {
 	Addr        string
 	TLSCertFile string
 	TLSKeyFile  string
 }
 
+// RegisterFlags adds flags to flagset
 func (sc *HTTPServerConf) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&sc.Addr, "addr", ":8080", "listen addr")
 	fs.StringVar(&sc.TLSCertFile, "tls-cert", "", "tls cert file")
 	fs.StringVar(&sc.TLSKeyFile, "tls-key", "", "tls key file")
 }
 
+// Server returns a http.Server if modification is needed,
+// a run function taking a cancellation/shutdown context
+// and returns any errors
+//
+// Expects a global Meter with name os.Args[0]
+//
+// Inserts /debug/pprof/, /health, and /metrics endpoints
+// and wraps all handlers with CORS and request logging
 func (sc HTTPServerConf) Server(h http.Handler, log zerolog.Logger) (*http.Server, func(context.Context) error, error) {
 	latency := metric.Must(global.Meter(os.Args[0])).NewInt64ValueRecorder(
 		"request_latency_ms",
@@ -51,8 +61,8 @@ func (sc HTTPServerConf) Server(h http.Handler, log zerolog.Logger) (*http.Serve
 		m.Handle("/metrics", promExporter)
 	}
 
-	h = corsAllowAll(h)
 	h = logMid(h, log, latency)
+	h = corsAllowAll(h)
 
 	srv := &http.Server{
 		Addr:              sc.Addr,
@@ -73,7 +83,10 @@ func (sc HTTPServerConf) Server(h http.Handler, log zerolog.Logger) (*http.Serve
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-			<-c
+			select {
+			case <-c:
+			case <-ctx.Done():
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			go func() {
 				<-c
