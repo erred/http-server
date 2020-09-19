@@ -1,9 +1,8 @@
 FROM golang:alpine AS build
 
 WORKDIR /app
-ENV CGO_ENABLED=0
 COPY . .
-RUN go build -trimpath -o /bin/http-server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /bin/http-server
 
 FROM scratch
 
