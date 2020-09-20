@@ -7,7 +7,7 @@ require (
 	github.com/rs/zerolog v1.20.0
 	go.opentelemetry.io/otel v0.11.0
 	go.seankhliao.com/stream v0.1.0
-	go.seankhliao.com/usvc v0.4.1
+	go.seankhliao.com/usvc v0.5.0
 	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff // indirect
 	google.golang.org/grpc v1.32.0
 )
