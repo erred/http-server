@@ -293,8 +293,8 @@ go.opentelemetry.io/otel/exporters/metric/prometheus v0.11.0 h1:ANs0WoaTBtMQJIId
 go.opentelemetry.io/otel/exporters/metric/prometheus v0.11.0/go.mod h1:UztR8YbWSjO17RWjZ+QxiTMf5k0Ba0uoimYsxGO5n3s=
 go.opentelemetry.io/otel/sdk v0.11.0 h1:bkDMymVj6gIkPfgC5ci5atq0OYbfUHSn8NvsmyfyMq4=
 go.opentelemetry.io/otel/sdk v0.11.0/go.mod h1:XbZ6MrzIZ+d+qr7pH0FwHIbCnANMvXYgkq4afL/IUMQ=
-go.seankhliao.com/usvc v0.4.0 h1:MiXA0m9HbIpO5CQhmudZUkc/lz8TH75bH2V/60pZvlM=
-go.seankhliao.com/usvc v0.4.0/go.mod h1:HjOdYRx3daJBXmU+dbLGO3UXI7x7zxG7Jw2zkfWFSeo=
+go.seankhliao.com/usvc v0.4.1 h1:KghHHs/q2/8yGs2+HyX2VNLA3PZtnEe21koAPRLp9uk=
+go.seankhliao.com/usvc v0.4.1/go.mod h1:HjOdYRx3daJBXmU+dbLGO3UXI7x7zxG7Jw2zkfWFSeo=
 go.uber.org/atomic v1.3.2/go.mod h1:gD2HeocX3+yG+ygLZcrzQJaqmWj9AIm7n08wl/qW/PE=
 go.uber.org/atomic v1.5.0/go.mod h1:sABNBOSYdrvTF6hTgEIbc7YasKWGhgEQZyfxyTvoXHQ=
 go.uber.org/multierr v1.1.0/go.mod h1:wR5kodmAFQ0UK8QlbwjlSNy0Z68gJhDJUG5sjR94q/0=
