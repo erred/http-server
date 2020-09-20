@@ -8,11 +8,14 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/metric"
+	"go.seankhliao.com/stream"
 	"go.seankhliao.com/usvc"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -32,18 +35,27 @@ func main() {
 		w.Write(notfound)
 	})
 
+	cc, err := grpc.Dial(s.streamAddr)
+	if err != nil {
+		s.log.Error().Err(err).Msg("connect to stream")
+	}
+	defer cc.Close()
+	s.client = stream.NewStreamClient(cc)
+
 	m := http.NewServeMux()
 	m.Handle("/", s)
 
-	err := srvc.RunHTTP(context.Background(), m)
+	err = srvc.RunHTTP(context.Background(), m)
 	if err != nil {
 		s.log.Fatal().Err(err).Msg("run server")
 	}
 }
 
 type Server struct {
-	dir      string
-	notfound http.Handler
+	dir        string
+	notfound   http.Handler
+	streamAddr string
+	client     stream.StreamClient
 
 	page metric.Int64Counter
 
@@ -52,9 +64,16 @@ type Server struct {
 
 func (s *Server) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&s.dir, "dir", "public", "directory to serve")
+	fs.StringVar(&s.streamAddr, "stream.addr", "stream:80", "url to connect to stream")
 }
 
 func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	remote := r.Header.Get("x-forwarded-for")
+	if remote == "" {
+		remote = r.RemoteAddr
+	}
+
 	u, f := r.URL.Path, ""
 	switch {
 	case strings.HasSuffix(u, "/") && exists(path.Join(s.dir, u[:len(u)-1]+".html")):
@@ -82,28 +101,19 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.ServeFile(w, r, f)
-}
 
-func exists(p string) bool {
-	fi, err := os.Stat(p)
-	if err != nil || fi.IsDir() {
-		return false
+	httpRequest := &stream.HTTPRequest{
+		Timestamp: time.Now().Format(time.RFC3339),
+		Method:    r.Method,
+		Domain:    r.Host,
+		Path:      r.URL.Path,
+		Remote:    remote,
+		UserAgent: r.UserAgent(),
+		Referrer:  r.Referer(),
 	}
-	return true
-}
 
-func canonical(p string) string {
-	p = strings.TrimSuffix(strings.TrimSuffix(p, ".html"), "index")
-	if p[len(p)-1] != '/' {
-		p = p + "/"
+	_, err := s.client.LogHTTP(ctx, httpRequest)
+	if err != nil {
+		s.log.Error().Err(err).Msg("write to stream")
 	}
-	return p
-}
-
-func setHeaders(w http.ResponseWriter) {
-	w.Header().Set("strict-transport-security", `max-age=63072000; preload`)
-	w.Header().Set("referrer-policy", "strict-origin-when-cross-origin")
-	w.Header().Set("report-to", `{"group": "csp-endpoint", "max_age": 10886400, "endpoints": [{"url":"https://statslogger.seankhliao.com/json"}]}`)
-	w.Header().Set("content-security-policy", `default-src 'self'; upgrade-insecure-requests; connect-src https://statslogger.seankhliao.com https://www.google-analytics.com; font-src https://seankhliao.com; img-src *; object-src 'none'; script-src-elem 'nonce-deadbeef2' 'nonce-deadbeef3' 'nonce-deadbeef4' https://unpkg.com https://www.google-analytics.com https://ssl.google-analytics.com https://www.googletagmanager.com; sandbox allow-scripts; style-src-elem 'nonce-deadbeef1' https://seankhliao.com; report-to csp-endpoint; report-uri https://statslogger.seankhliao.com/json`)
-	w.Header().Set("feature-policy", `accelerometer 'none'; autoplay 'none'; camera 'none'; document-domain 'none'; encrypted-media 'none'; fullscreen 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; midi 'none'; payment 'none'; picture-in-picture 'none'; sync-xhr 'none'; usb 'none'; xr-spatial-tracking 'none'`)
 }
